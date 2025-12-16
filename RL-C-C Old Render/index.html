@@ -1,0 +1,453 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<meta charset="utf-8">
+	<title>serega pirat</title>
+	<link rel="preconnect" href="https://fonts.googleapis.com">
+	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+	<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+	<link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400&display=swap" rel="stylesheet">
+
+	<style>
+		body {
+			margin: 0;
+		}
+
+		canvas {
+			display: block;
+		}
+
+		#blocker {
+			position: absolute;
+			width: 100%;
+			height: 100%;
+			background-color: rgba(0,0,0,0.5);
+		}
+
+		#instructions {
+			width: 100%;
+			height: 100%;
+			display: flex;
+			flex-direction: column;
+			justify-content: center;
+			align-items: center;
+			text-align: center;
+			font-size: 32px;
+			color: white;
+			cursor: pointer;
+			font-family: sans-serif;
+		}
+
+		#debug-menu {
+			position: absolute;
+			top: 10px;
+			left: 10px;
+			background: rgba(0,0,0,0.7);
+			color: white;
+			padding: 10px;
+			font-family: sans-serif;
+			border-radius: 5px;
+			z-index: 100;
+			max-height: 90vh;
+			overflow-y: auto;
+		}
+
+			#debug-menu fieldset {
+				border: 1px solid #555;
+				border-radius: 4px;
+				margin-bottom: 10px;
+			}
+
+			#debug-menu legend {
+				font-weight: bold;
+			}
+
+			#debug-menu div {
+				margin-bottom: 5px;
+				display: flex;
+				justify-content: space-between;
+				align-items: center;
+			}
+
+			#debug-menu label {
+				margin-right: 10px;
+			}
+
+			#debug-menu input[type="range"] {
+				width: 120px;
+			}
+
+			#debug-menu span {
+				min-width: 30px;
+				text-align: right;
+			}
+
+		#speed-gauge-container {
+			position: relative;
+			width: 150px;
+			height: 20px;
+			background-color: #333;
+			border: 1px solid #777;
+			border-radius: 3px;
+			margin-bottom: 5px;
+		}
+
+		#speed-gauge-fill {
+			width: 0%;
+			height: 100%;
+			background-color: #00BFFF;
+			border-radius: 2px;
+			transition: width 0.1s linear, background-color 0.2s;
+		}
+
+		#speed-gauge-text {
+			position: absolute;
+			width: 100%;
+			top: 0;
+			left: 0;
+			text-align: center;
+			line-height: 20px;
+			color: white;
+			text-shadow: 1px 1px 2px black;
+			font-size: 12px;
+		}
+
+		#score-container {
+			position: absolute;
+			top: 20px;
+			left: 20px;
+			color: white;
+			font-family: 'Press Start 2P', monospace; /* Используем пиксельный шрифт */
+			font-size: 16px;
+			text-shadow: 2px 2px 0px #000000; /* Резкая черная тень без размытия */
+			user-select: none;
+			line-height: 1.5;
+			/* Убираем сглаживание для четкости пикселей */
+			-webkit-font-smoothing: none;
+			font-smooth: never;
+			image-rendering: pixelated;
+		}
+
+		#combo-container {
+			position: absolute;
+			top: 20px;
+			left: 50%;
+			transform: translateX(-50%);
+			color: white;
+			font-family: 'Press Start 2P', monospace;
+			text-align: center;
+			text-shadow: 3px 3px 0px rgba(0,0,0,0.75); /* Тень чуть больше и темнее */
+			user-select: none;
+			display: none; /* Изначально скрыт */
+			-webkit-font-smoothing: none;
+			font-smooth: never;
+			image-rendering: pixelated;
+		}
+
+		#combo-score {
+			font-size: 32px;
+		}
+
+		#combo-timer {
+			font-size: 18px;
+			margin-top: 8px;
+			/* Добавим тень и для таймера */
+			text-shadow: 2px 2px 0px rgba(0,0,0,0.75);
+			color: #ffc107;
+		}
+
+		#chat-container {
+			position: absolute;
+			bottom: 20px;
+			left: 20px;
+			width: 400px;
+			height: 250px;
+			background-color: rgba(0, 0, 0, 0.4);
+			color: white;
+			font-family: 'Press Start 2P', sans-serif; /* Используем тот же шрифт, что и в игре */
+			font-size: 10px;
+			display: flex;
+			flex-direction: column;
+			transition: opacity 0.3s ease;
+			z-index: 100; /* Поверх других элементов */
+		}
+
+			#chat-container.chat-hidden {
+				opacity: 0;
+				pointer-events: none; /* Нельзя взаимодействовать, когда скрыто */
+			}
+
+		#chat-messages {
+			list-style-type: none;
+			padding: 10px;
+			margin: 0;
+			flex-grow: 1;
+			overflow-y: auto; /* Добавляем прокрутку, если сообщений много */
+		}
+
+			#chat-messages li {
+				margin-bottom: 5px;
+				word-wrap: break-word; /* Перенос длинных слов */
+			}
+
+			#chat-messages .sender-you {
+				color: #87CEEB; /* Цвет для ваших сообщений */
+			}
+
+			#chat-messages .sender-bot {
+				color: #ffc107; /* Цвет для сообщений "другого игрока" */
+			}
+
+		#chat-input {
+			border: none;
+			background-color: rgba(0, 0, 0, 0.6);
+			color: white;
+			padding: 8px;
+			font-family: inherit;
+			font-size: 10px;
+			outline: none;
+			border-top: 1px solid rgba(255, 255, 255, 0.2);
+		}
+        /* style.css */
+
+        #coin-ui-container {
+            position: absolute;
+            top: 25px;
+            right: 25px;
+            display: flex;
+            align-items: center;
+            background-color: rgba(0, 0, 0, 0.5);
+            padding: 8px 15px;
+            border-radius: 20px;
+            border: 2px solid #FFC107; /* Золотая рамка */
+            color: #FFFFFF;
+            font-family: 'Press Start 2P', cursive;
+            font-size: 24px;
+            text-shadow: 2px 2px 3px rgba(0, 0, 0, 0.7);
+            z-index: 100; /* Убедимся, что он поверх всего */
+            pointer-events: none; /* Чтобы не мешал кликам по игре */
+        }
+
+            #coin-ui-container .coin-icon {
+                width: 28px;
+                height: 28px;
+                margin-right: 12px;
+                color: #FFD700; /* Золотой цвет иконки */
+            }
+
+        #coin-balance {
+            color: #FFFFFF;
+        }
+
+
+	</style>
+</head>
+<body>
+	<div id="debug-menu" style="display: none;">
+
+		<fieldset>
+			<div>
+				<label for="TARGET_FPS">Целевой FPS</label>
+				<input type="range" id="TARGET_FPS" min="30" max="1000" step="10" value="999">
+				<span id="TARGET_FPS_Value">999</span>
+			</div>
+			<legend>Звук</legend>
+			<div>
+				<label for="MASTER_VOLUME">Общая громкость:</label>
+				<input type="range" id="MASTER_VOLUME" min="0" max="1" step="0.05" value="1.0">
+				<span id="MASTER_VOLUME_Value">1.0</span>
+			</div>
+			<div>
+				<label for="FOOTSTEP_VOLUME">Громкость шагов:</label>
+				<input type="range" id="FOOTSTEP_VOLUME" min="0" max="5" step="0.1" value="0.15">
+				<span id="FOOTSTEP_VOLUME_Value">0.1</span>
+			</div>
+			<div>
+				<label for="SLIDE_VOLUME">Громкость скольжения:</label>
+				<input type="range" id="SLIDE_VOLUME" min="0" max="1" step="0.05" value="0.5">
+				<span id="SLIDE_VOLUME_Value">0.5</span>
+			</div>
+			<div class="setting-row">
+				<label for="COIN_VOLUME">Coin Volume</label>
+				<input type="range" id="COIN_VOLUME" min="0" max="1" step="0.01" value="0.3">
+				<span id="COIN_VOLUME_Value">0.3</span>
+			</div>
+			<div>
+				<label for="STEP_INTERVAL_BASE">Частота шагов:</label>
+				<input type="range" id="STEP_INTERVAL_BASE" min="0.2" max="1.5" step="0.05" value="0.5">
+				<span id="STEP_INTERVAL_BASE_Value">0.5</span>
+			</div>
+		</fieldset>
+		<fieldset>
+			<legend>Игрок</legend>
+			<div>
+				<label for="AIR_ACCELERATE">AIR_ACCELERATE</label>
+				<input type="range" id="AIR_ACCELERATE" min="0" max="500" step="1" value="15">
+				<span id="AIR_ACCELERATE_Value">15</span>
+			</div>
+			<div>
+				<label for="AIR_CONTROL_SPEED">AIR_CONTROL_SPEED</label>
+				<input type="range" id="AIR_CONTROL_SPEED" min="0" max="500" step="1" value="15">
+				<span id="AIR_CONTROL_SPEED_Value">15</span>
+			</div>
+			<div>
+				<label for="AIR_STRAFE_SPEED_LIMIT">AIR_STRAFE_SPEED_LIMIT</label>
+				<input type="range" id="AIR_STRAFE_SPEED_LIMIT" min="0" max="200" step="1" value="50">
+				<span id="AIR_STRAFE_SPEED_LIMIT_Value">50</span>
+			</div>
+			<div>
+				<label for="BUNNYHOP_SPEED_BONUS">BUNNYHOP_SPEED_BONUS</label>
+				<input type="range" id="BUNNYHOP_SPEED_BONUS" min="0" max="500" step="1" value="180">
+				<span id="BUNNYHOP_SPEED_BONUS_Value">180</span>
+			</div>
+			<div>
+				<label for="BUNNYHOP_MAX_SPEED">Макс. БХОП скорость</label>
+				<input type="range" id="BUNNYHOP_MAX_SPEED" min="140" max="4500" step="1" value="180">
+				<span id="BUNNYHOP_MAX_SPEED_Value">180</span>
+			</div>
+			<div>
+				<label for="MIN_PLAYER_SPEED">Мин. скорость</label>
+				<input type="range" id="MIN_PLAYER_SPEED" min="10" max="100" step="1" value="80">
+				<span id="MIN_PLAYER_SPEED_Value">80</span>
+			</div>
+			<div>
+				<label for="MAX_PLAYER_SPEED">Макс. скорость</label>
+				<input type="range" id="MAX_PLAYER_SPEED" min="100" max="250" step="1" value="110">
+				<span id="MAX_PLAYER_SPEED_Value">110</span>
+			</div>
+			<div>
+				<label for="JUMP_STRENGTH">Сила прыжка</label>
+				<input type="range" id="JUMP_STRENGTH" min="50" max="300" step="5" value="110">
+				<span id="JUMP_STRENGTH_Value">110</span>
+			</div>
+			<div>
+				<label for="GRAVITY">Гравитация</label>
+				<input type="range" id="GRAVITY" min="50" max="800" step="10" value="280">
+				<span id="GRAVITY_Value">280</span>
+			</div>
+		</fieldset>
+		<fieldset>
+			<legend>Мир</legend>
+			<div>
+				<label for="RENDER_DISTANCE">Дальность (чанков)</label>
+				<input type="range" id="RENDER_DISTANCE" min="1" max="120" step="1" value="5">
+				<span id="RENDER_DISTANCE_Value">5</span>
+			</div>
+			<div>
+				<label for="BIOME_TRANSITION_DISTANCE">Начало перехода</label>
+				<input type="range" id="BIOME_TRANSITION_DISTANCE" min="5" max="50" step="1" value="15">
+				<span id="BIOME_TRANSITION_DISTANCE_Value">15</span>
+			</div>
+			<div>
+				<label for="TIME_OF_DAY">Время суток</label>
+				<input type="range" id="TIME_OF_DAY" min="0" max="1" value="0.25" step="0.01">
+				<span id="TIME_OF_DAY_Value">0.25</span>
+			</div>
+			<div>
+				<label for="FOG_DISTANCE">Дальность тумана (в чанках)</label>
+				<input type="range" id="FOG_DISTANCE" name="FOG_DISTANCE" min="1" max="125" value="4" step="1">
+				<span id="FOG_DISTANCE_Value">4</span>
+			</div>
+			<div>
+				<label for="SUNRISE_RENDER_DISTANCE">Прорисовка (Восход)</label>
+				<input type="range" id="SUNRISE_RENDER_DISTANCE" min="10" max="30" step="1" value="20">
+				<span id="SUNRISE_RENDER_DISTANCE_Value">20</span>
+			</div>
+		</fieldset>
+		<fieldset>
+			<legend>Камера и Анимации</legend>
+			<div>
+				<label for="NORMAL_FOV">FOV (обычный)</label>
+				<input type="range" id="NORMAL_FOV" min="60" max="100" step="1" value="81">
+				<span id="NORMAL_FOV_Value">81</span>
+			</div>
+			<div>
+				<label for="RUNNING_FOV">FOV (бег)</label>
+				<input type="range" id="RUNNING_FOV" min="70" max="120" step="1" value="89">
+				<span id="RUNNING_FOV_Value">89</span>
+			</div>
+			<div>
+				<label for="HEAD_BOB_DEPTH">Глубина тряски</label>
+				<input type="range" id="HEAD_BOB_DEPTH" min="0" max="3" step="0.1" value="1">
+				<span id="HEAD_BOB_DEPTH_Value">1</span>
+			</div>
+			<div>
+				<label for="STRAFE_ROLL_ANGLE">Угол наклона</label>
+				<input type="range" id="STRAFE_ROLL_ANGLE" min="0" max="10" step="0.5" value="1.5">
+				<span id="STRAFE_ROLL_ANGLE_Value">1.5</span>
+			</div>
+			<div>
+				<label for="HEAD_BOB_SMOOTH_SPEED">Скорость сглаживания BOB</label>
+				<input type="range" id="HEAD_BOB_SMOOTH_SPEED" min="0" max="90" step="1" value="20">
+				<span id="HEAD_BOB_SMOOTH_SPEED_Value">28</span>
+			</div>
+		</fieldset>
+		<fieldset>
+			<legend>Объекты (Монеты)</legend>
+			<div class="slider-container">
+				<label for="DAYLIGHT_EFFECT_DURATION">Длительность эффекта дня:</label>
+				<input type="range" id="DAYLIGHT_EFFECT_DURATION" min="1" max="20" value="4" step="0.5">
+				<span id="DAYLIGHT_EFFECT_DURATION_Value">4</span>
+			</div>
+			<div>
+				<label for="OBJECT_SPAWN_CHANCE">Шанс спавна (%)</label>
+				<input type="range" id="OBJECT_SPAWN_CHANCE" min="0" max="100" step="1" value="10">
+				<span id="OBJECT_SPAWN_CHANCE_Value">10</span>
+			</div>
+			<div>
+				<label for="COIN_HOVER_SPEED">Скорость вращения</label>
+				<input type="range" id="COIN_HOVER_SPEED" min="0" max="10" step="0.5" value="3.0">
+				<span id="COIN_HOVER_SPEED_Value">3.0</span>
+			</div>
+			<div>
+				<label for="XRAY_DURATION">Длительность X-Ray</label>
+				<input type="range" id="XRAY_DURATION" min="0" max="15" step="0.1" value="5">
+				<span id="XRAY_DURATION_Value">5</span>
+			</div>
+			<div>
+				<label for="XRAY_OPACITY">Прозрачность X-Ray</label>
+				<input type="range" id="XRAY_OPACITY" min="0" max="1" step="0.1" value="0.7">
+				<span id="XRAY_OPACITY_Value">0.7</span>
+			</div>
+			<div>
+				<label for="XRAY_RADIUS">Радиус X-Ray</label>
+				<input type="range" id="XRAY_RADIUS" min="50" max="1500" value="150" step="10">
+				<span id="XRAY_RADIUS_Value">150</span>
+			</div>
+			<div class="slider-container">
+				<label for="PARTICLE_OPACITY">Прозрачность частиц</label>
+				<input type="range" id="PARTICLE_OPACITY" min="0.1" max="1.0" value="0.7" step="0.05">
+				<span id="PARTICLE_OPACITY_Value">0.7</span>
+			</div>
+			<div class="slider-container">
+				<label for="PARTICLE_APPEAR_DELAY">Задержка частиц (сек)</label>
+				<input type="range" id="PARTICLE_APPEAR_DELAY" min="0.0" max="1.0" value="0.2" step="0.05">
+				<span id="PARTICLE_APPEAR_DELAY_Value">0.2</span>
+			</div>
+		</fieldset>
+	</div>
+	<div id="coin-ui-container">
+		<svg class="coin-icon" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm-1-12h2v2h-2v-2zm0 4h2v6h-2v-6z" /></svg>
+		<span id="coin-balance">0</span>
+	</div>
+	<div id="blocker">
+		<div id="instructions">
+			Кликните, чтобы начать
+			<br>
+			<small>(W, A, S, D = Движение, MOUSE = Осмотр)</small>
+		</div>
+	</div>
+
+	<script type="importmap">
+		{
+			"imports": {
+				"three": "https://unpkg.com/three@0.157.0/build/three.module.js",
+				"three/addons/": "https://unpkg.com/three@0.157.0/examples/jsm/",
+				"simplex-noise": "https://cdn.skypack.dev/simplex-noise@4.0.1"
+			}
+		}
+	</script>
+	<script type="module" src="highscore.js"></script>
+	<script type="module" src="game.js"></script>
+</body>
+</html>

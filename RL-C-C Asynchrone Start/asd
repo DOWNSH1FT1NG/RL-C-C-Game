@@ -1,0 +1,266 @@
+﻿// Файл: sky.js (ИСПРАВЛЕННАЯ ВЕРСЯ)
+import * as THREE from 'three';
+import { createSunSprite, createMoonSprite } from './daySprite.js';
+
+function createCloudTexture() {
+    const canvas = document.createElement('canvas');
+    canvas.width = 256;
+    canvas.height = 128;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
+    const circles = [{ x: 70, y: 60, r: 40 }, { x: 120, y: 55, r: 55 }, { x: 170, y: 65, r: 45 }, { x: 130, y: 80, r: 40 },];
+    circles.forEach(circle => { ctx.beginPath(); ctx.arc(circle.x, circle.y, circle.r, 0, Math.PI * 2); ctx.fill(); });
+    return new THREE.CanvasTexture(canvas);
+}
+
+export class Sky {
+    constructor(scene, camera, options = {}) {
+        if (!scene || !camera) {
+            throw new Error("Sky class requires a scene and a camera!");
+        }
+
+        this.scene = scene;
+        this.camera = camera;
+        this.timeOfDay = options.timeOfDay ?? 0.25;
+        this.cycleSpeed = options.cycleSpeed ?? 0.01;
+        this.sunDistance = 10000;
+        this.transitionDuration = options.transitionDuration ?? 0.2;
+        this.transitionOffset = options.transitionOffset ?? 0.15;
+
+        // --- ИЗМЕНЕНИЕ 1: Pivot теперь просто "указатель" ---
+        // Он содержит только фиктивный объект для расчета направления.
+        this.celestialPivot = new THREE.Object3D();
+        this.celestialPivot.name = "Celestial Direction Helper";
+        this.celestialPivot.rotation.x = THREE.MathUtils.degToRad(35);
+        this.lightPositionHelper = new THREE.Object3D();
+        this.lightPositionHelper.position.set(0, this.sunDistance, 0);
+        this.celestialPivot.add(this.lightPositionHelper);
+        this.scene.add(this.celestialPivot); // Добавляем в сцену, чтобы его матрица обновлялась
+
+        // --- ИЗМЕНЕНИЕ 2: Свет и его цель добавляются напрямую в сцену ---
+        this.ambientLight = new THREE.HemisphereLight(0xB1E1FF, 0xB97A20, 1.0);
+        this.directionalLight = new THREE.DirectionalLight(0xffffff, 1);
+        this.scene.add(this.ambientLight);
+        this.scene.add(this.directionalLight);
+        this.scene.add(this.directionalLight.target);
+
+        this._setupLightingAndShadows();
+
+        this.sunSprite = createSunSprite();
+        this.moonSprite = createMoonSprite();
+        this.sunSprite.frustumCulled = false;
+        this.moonSprite.frustumCulled = false;
+
+        this.cloudsContainer = this._createClouds();
+
+        this.scene.add(this.sunSprite);
+        this.scene.add(this.moonSprite);
+        this.scene.add(this.cloudsContainer);
+    }
+
+    // В файле sky.js
+
+    update(delta, playerBody) {
+        if (!playerBody) return;
+
+        const MINUTES_PER_DAY = 24 * 60;
+        const timeIncrement = (delta * this.cycleSpeed) / MINUTES_PER_DAY;
+        this.timeOfDay = (this.timeOfDay + timeIncrement) % 1.0;
+
+        this.celestialPivot.rotation.z = this.timeOfDay * Math.PI * 2;
+
+        const idealLightWorldPos = new THREE.Vector3();
+        this.lightPositionHelper.getWorldPosition(idealLightWorldPos);
+
+        this.directionalLight.target.position.copy(playerBody.position);
+
+        // Вектор от игрока к идеальной позиции СОЛНЦА
+        const lightDirection = idealLightWorldPos.clone().sub(playerBody.position).normalize();
+
+        // --- ГЛАВНОЕ ИСПРАВЛЕНИЕ ЗДЕСЬ ---
+        // Если солнце под землей (ночь)...
+        if (idealLightWorldPos.y < playerBody.position.y) {
+            // ...то мы полностью инвертируем вектор, чтобы он указывал на ЛУНУ.
+            // Метод .negate() разворачивает вектор на 180 градусов.
+            lightDirection.negate();
+        }
+        // ------------------------------------
+
+        const lightDistance = 500;
+        const finalLightPosition = playerBody.position.clone().add(lightDirection.multiplyScalar(lightDistance));
+        this.directionalLight.position.copy(finalLightPosition);
+
+        this._updateEnvironmentColors(playerBody);
+        this._updateCelestialSprites();
+    }
+
+    _setupLightingAndShadows() {
+        const light = this.directionalLight; light.castShadow = true;
+        const shadowMapSize = 4; light.shadow.mapSize.width = shadowMapSize; light.shadow.mapSize.height = shadowMapSize;
+        light.shadow.bias = -5; light.shadow.normalBias = 0.05;
+        const shadowCameraHorizontalSize = 250; const shadowCameraVerticalSize = 400;
+        light.shadow.camera.left = -shadowCameraHorizontalSize; light.shadow.camera.right = shadowCameraHorizontalSize;
+        light.shadow.camera.top = shadowCameraVerticalSize; light.shadow.camera.bottom = -shadowCameraVerticalSize;
+        light.shadow.camera.near = 0.5; light.shadow.camera.far = 1500;
+    }
+
+    _createClouds() {
+        const container = new THREE.Object3D(); container.name = "Clouds Container"; this.cloudDriftArea = 4000;
+        const cloudTexture = createCloudTexture();
+        for (let i = 0; i < 25; i++) {
+            const cloudMaterial = new THREE.SpriteMaterial({ map: cloudTexture, transparent: true, opacity: 0.9, fog: false, blending: THREE.NormalBlending });
+            const cloud = new THREE.Sprite(cloudMaterial);
+            cloud.position.set(Math.random() * this.cloudDriftArea - this.cloudDriftArea / 2, Math.random() * 200 + 600, Math.random() * 1500 - 1000);
+            const scale = Math.random() * 150 + 100; cloud.scale.set(scale * 2, scale, 1);
+            container.add(cloud);
+        }
+        return container;
+    }
+
+    // В файле sky.js
+
+    _updateEnvironmentColors(playerBody) {
+        const lightWorldPosition = new THREE.Vector3();
+        this.lightPositionHelper.getWorldPosition(lightWorldPosition);
+        const sunY = lightWorldPosition.y;
+        const sunDistance = this.sunDistance;
+        const sunY_norm = sunY / sunDistance;
+
+        // --- ПУЛЬТ УПРАВЛЕНИЯ СВЕТОМ ---
+        const DAY_INTENSITY = 2.7;
+        const DAY_LIGHT_COLOR = new THREE.Color(0xFFF2D6);
+        const DAY_SKY_COLOR_AMBIENT = new THREE.Color(0x88aaff);
+        const DAY_GROUND_COLOR_AMBIENT = new THREE.Color(0xB97A20);
+        const DAY_AMBIENT_INTENSITY = 0.7;
+
+        const NIGHT_INTENSITY = 1.7;
+        const NIGHT_LIGHT_COLOR = new THREE.Color(0xA0B0FF);
+        const NIGHT_SKY_COLOR_AMBIENT = new THREE.Color(0x445588);
+        const NIGHT_GROUND_COLOR_AMBIENT = new THREE.Color(0x445588);
+        const NIGHT_AMBIENT_INTENSITY = 4.5;
+
+        const DUSK_LIGHT_COLOR = new THREE.Color(0xFFB74D);
+        const DUSK_SKY_COLOR_AMBIENT = new THREE.Color(0xFFDAB9);
+        const DUSK_GROUND_COLOR_AMBIENT = new THREE.Color(0x997554);
+        const DUSK_INTENSITY_BOOST = 1.0;
+        const DUSK_AMBIENT_INTENSITY_BOOST = 0.5;
+
+        // --- ИЗМЕНЕНИЕ ЗДЕСЬ ---
+        const daySkyColor = new THREE.Color(0xA4DDFC); // <-- Классический светло-голубой
+        // -------------------------
+        const duskSkyColor = new THREE.Color(0xFFB347);
+        const nightSkyColor = new THREE.Color(0x283593);
+
+        // --- КОНЕЦ ПУЛЬТА УПРАВЛЕНИЯ ---
+
+        const halfDuration = this.transitionDuration / 2;
+        const DAY_THRESHOLD = this.transitionOffset + halfDuration;
+        const NIGHT_THRESHOLD = this.transitionOffset - halfDuration;
+
+        let skyColor = new THREE.Color();
+
+        if (sunY_norm > DAY_THRESHOLD) {
+            // --- СОСТОЯНИЕ: ДЕНЬ ---
+            this.directionalLight.color.copy(DAY_LIGHT_COLOR);
+            this.directionalLight.intensity = DAY_INTENSITY;
+            this.ambientLight.color.copy(DAY_SKY_COLOR_AMBIENT);
+            this.ambientLight.groundColor.copy(DAY_GROUND_COLOR_AMBIENT);
+            this.ambientLight.intensity = DAY_AMBIENT_INTENSITY;
+            skyColor.copy(daySkyColor);
+
+        } else if (sunY_norm < NIGHT_THRESHOLD) {
+            // --- СОСТОЯНИЕ: НОЧЬ ---
+            this.directionalLight.color.copy(NIGHT_LIGHT_COLOR);
+            this.directionalLight.intensity = NIGHT_INTENSITY;
+            this.ambientLight.color.copy(NIGHT_SKY_COLOR_AMBIENT);
+            this.ambientLight.groundColor.copy(NIGHT_GROUND_COLOR_AMBIENT);
+            this.ambientLight.intensity = NIGHT_AMBIENT_INTENSITY;
+            skyColor.copy(nightSkyColor);
+
+        } else {
+            // --- СОСТОЯНИЕ: ПЕРЕХОД (ЗАКАТ / РАССВЕТ) ---
+            const transitionProgress = (sunY_norm - NIGHT_THRESHOLD) / (DAY_THRESHOLD - NIGHT_THRESHOLD);
+
+            const baseDirectionalIntensity = NIGHT_INTENSITY + (DAY_INTENSITY - NIGHT_INTENSITY) * transitionProgress;
+            const baseAmbientIntensity = NIGHT_AMBIENT_INTENSITY + (DAY_AMBIENT_INTENSITY - NIGHT_AMBIENT_INTENSITY) * transitionProgress;
+            const duskBoostFactor = Math.sin(transitionProgress * Math.PI);
+            this.directionalLight.intensity = baseDirectionalIntensity + (DUSK_INTENSITY_BOOST * duskBoostFactor);
+            this.ambientLight.intensity = baseAmbientIntensity + (DUSK_AMBIENT_INTENSITY_BOOST * duskBoostFactor);
+
+            const tempDirectionalColor = new THREE.Color();
+            const tempAmbientSkyColor = new THREE.Color();
+            const tempAmbientGroundColor = new THREE.Color();
+
+            if (transitionProgress > 0.5) {
+                const upperProgress = (transitionProgress - 0.5) * 2;
+                tempDirectionalColor.lerpColors(DUSK_LIGHT_COLOR, DAY_LIGHT_COLOR, upperProgress);
+                tempAmbientSkyColor.lerpColors(DUSK_SKY_COLOR_AMBIENT, DAY_SKY_COLOR_AMBIENT, upperProgress);
+                tempAmbientGroundColor.lerpColors(DUSK_GROUND_COLOR_AMBIENT, DAY_GROUND_COLOR_AMBIENT, upperProgress);
+                skyColor.lerpColors(duskSkyColor, daySkyColor, upperProgress);
+            } else {
+                const lowerProgress = transitionProgress * 2;
+                tempDirectionalColor.lerpColors(NIGHT_LIGHT_COLOR, DUSK_LIGHT_COLOR, lowerProgress);
+                tempAmbientSkyColor.lerpColors(NIGHT_SKY_COLOR_AMBIENT, DUSK_SKY_COLOR_AMBIENT, lowerProgress);
+                tempAmbientGroundColor.lerpColors(NIGHT_GROUND_COLOR_AMBIENT, DUSK_GROUND_COLOR_AMBIENT, lowerProgress);
+                skyColor.lerpColors(nightSkyColor, duskSkyColor, lowerProgress);
+            }
+
+            this.directionalLight.color.copy(tempDirectionalColor);
+            this.ambientLight.color.copy(tempAmbientSkyColor);
+            this.ambientLight.groundColor.copy(tempAmbientGroundColor);
+        }
+
+        this.scene.background.copy(skyColor);
+        this.scene.fog.color.copy(skyColor);
+    }
+
+    _updateCelestialSprites() {
+        // 1. Получаем позицию камеры в мире.
+        const cameraWorldPosition = new THREE.Vector3();
+        this.camera.getWorldPosition(cameraWorldPosition);
+
+        // 2. Получаем позицию источника света, чтобы знать ГЛОБАЛЬНОЕ НАПРАВЛЕНИЕ.
+        const lightWorldPosition = new THREE.Vector3();
+        this.lightPositionHelper.getWorldPosition(lightWorldPosition);
+
+        // 3. Вычисляем направление на солнце от центра мира.
+        const lightDir = lightWorldPosition.clone().normalize();
+
+        // 4. --- ГЛАВНОЕ ИЗМЕНЕНИЕ ---
+        // Дистанция теперь не фиксированная, а динамическая.
+        // Мы помещаем небесные тела на 95% от максимальной дальности прорисовки камеры.
+        // Это гарантирует, что они всегда будут ПОЗАДИ всего остального.
+        const distance = this.camera.far * 0.95;
+
+        // 5. Новая позиция = ПОЗИЦИЯ КАМЕРЫ + НАПРАВЛЕНИЕ * ДИСТАНЦИЯ.
+        const sunPosition = cameraWorldPosition.clone().add(lightDir.clone().multiplyScalar(distance));
+        this.sunSprite.position.copy(sunPosition);
+
+        // 6. Делаем то же самое для луны.
+        const moonPosition = cameraWorldPosition.clone().add(lightDir.clone().negate().multiplyScalar(distance));
+        this.moonSprite.position.copy(moonPosition);
+
+        // 7. Масштаб теперь тоже должен зависеть от дистанции, чтобы размер на экране был постоянным.
+        // Мы подбираем коэффициент (например, 0.45) так, чтобы выглядело хорошо.
+        const scaleFactor = distance * 0.25;
+        this.sunSprite.scale.set(scaleFactor, scaleFactor, 1);
+        this.moonSprite.scale.set(scaleFactor * 0.6, scaleFactor * 0.6, 1); // Луна чуть меньше
+
+        // 8. Поворачиваем меши в сторону камеры.
+/*        this.sunSprite.lookAt(cameraWorldPosition);
+        this.moonSprite.lookAt(cameraWorldPosition);*/
+
+        // Логика видимости остается прежней
+        const isDayTime = lightWorldPosition.y > 0;
+        this.sunSprite.visible = isDayTime;
+        this.moonSprite.visible = !isDayTime;
+    }
+
+    _updateClouds(delta) {
+        const cloudDriftSpeed = 5;
+        for (const cloud of this.cloudsContainer.children) {
+            cloud.position.x += cloudDriftSpeed * delta;
+            if (cloud.position.x > this.cloudDriftArea / 2) { cloud.position.x = -this.cloudDriftArea / 2; }
+        }
+    }
+}

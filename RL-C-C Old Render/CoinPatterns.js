@@ -1,0 +1,122 @@
+// --- ФАЙЛ: CoinPatterns.js (ОБНОВЛЕННЫЙ С Y-КООРДИНАТОЙ) ---
+
+import { settings } from './settings.js';
+import { seededRandom } from './utils.js';
+const getSeed = () => window.WORLD_SEED || 0;
+
+const patterns = [
+    // --- Короткие и средние паттерны ---
+    {
+        name: 'Прямая линия',
+        shape: [{ x: 0, z: -135 }, { x: 0, z: -45 }, { x: 0, z: 45 }, { x: 0, z: 135 },]
+    },
+    {
+        name: 'Дуга',
+        shape: [{ x: -180, z: 0 }, { x: -156, z: -90 }, { x: -90, z: -156 }, { x: 0, z: -180 }, { x: 90, z: -156 }, { x: 156, z: -90 }, { x: 180, z: 0 },]
+    },
+
+    // --- Длинные паттерны ---
+    {
+        name: 'Длинная прямая тропа',
+        shape: [{ x: 0, z: -240 }, { x: 0, z: -180 }, { x: 0, z: -120 }, { x: 0, z: -60 }, { x: 0, z: 0 }, { x: 0, z: 60 }]
+    },
+    {
+        name: 'Плавная длинная волна',
+        shape: [{ x: -80, z: -250 }, { x: -40, z: -190 }, { x: 0, z: -130 }, { x: 40, z: -70 }, { x: 80, z: -10 }, { x: 40, z: 50 }]
+    },
+    {
+        name: 'Большая дуга',
+        shape: [{ x: -200, z: 100 }, { x: -173, z: 52 }, { x: -128, z: 0 }, { x: -68, z: -40 }, { x: 0, z: -60 }, { x: 68, z: -40 }, { x: 128, z: 0 }]
+    },
+
+    // --- Очень длинные паттерны ---
+    {
+        name: 'Магистраль',
+        shape: [{ x: 0, z: -450 }, { x: 0, z: -375 }, { x: 0, z: -300 }, { x: 0, z: -225 }, { x: 0, z: -150 }, { x: 0, z: -75 }, { x: 0, z: 0 }, { x: 0, z: 75 }, { x: 0, z: 150 }, { x: 0, z: 225 }, { x: 0, z: 300 }, { x: 0, z: 375 }, { x: 0, z: 450 },]
+    },
+    {
+        name: 'Великий Змей',
+        shape: [{ x: 150, z: -560 }, { x: 100, z: -480 }, { x: 50, z: -400 }, { x: 0, z: -320 }, { x: -50, z: -240 }, { x: -100, z: -160 }, { x: -150, z: -80 }, { x: -150, z: 0 }, { x: -100, z: 80 }, { x: -50, z: 160 }, { x: 0, z: 240 }, { x: 50, z: 320 }, { x: 100, z: 400 }, { x: 150, z: 480 }, { x: 150, z: 560 },]
+    },
+    {
+        name: 'Гигантский Полукруг',
+        shape: [{ x: -400, z: 200 }, { x: -370, z: 150 }, { x: -320, z: 100 }, { x: -260, z: 50 }, { x: -190, z: 10 }, { x: -120, z: -20 }, { x: -50, z: -40 }, { x: 0, z: -45 }, { x: 50, z: -40 }, { x: 120, z: -20 }, { x: 190, z: 10 }, { x: 260, z: 50 }, { x: 320, z: 100 }, { x: 370, z: 150 }, { x: 400, z: 200 },]
+    },
+
+    // --- НОВЫЕ 3D ПАТТЕРНЫ С КООРДИНАТОЙ Y ---
+    {
+        name: 'Воздушная Арка',
+        shape: [
+            { x: -150, z: -150 },   // Начало на земле
+            { x: -100, z: -100 },  // Плавный подъем
+            { x: -50, z: -50, y: 25 },
+            { x: 0, z: 0, y: 45 },  // Высшая точка
+            { x: 50, z: 50, y: 25 },
+            { x: 100, z: 100},
+            { x: 150, z: 150 },   // Конец на земле
+        ]
+    },
+];
+
+class CoinPatternManager {
+    constructor() {
+        this.spawnedPatternCenters = new Map();
+        this.minDistance = settings.CHUNK_SIZE * (settings.COIN_PATTERN_MIN_DISTANCE_IN_CHUNKS || 3.0);
+    }
+
+    shouldSpawnPattern(chunkX, chunkZ) {
+        const chance = settings.COIN_PATTERN_SPAWN_CHANCE || 0;
+        // Используем seededRandom с уникальными множителями для этого решения
+        const roll = seededRandom(chunkX * 17, chunkZ * 19, getSeed());
+        if (roll >= chance) {
+            return false;
+        }
+
+        // 2. Проверяем расстояние до уже существующих паттернов
+        const currentWorldX = chunkX * settings.CHUNK_SIZE;
+        const currentWorldZ = chunkZ * settings.CHUNK_SIZE;
+
+        for (const [key, _] of this.spawnedPatternCenters.entries()) {
+            const [prevX, prevZ] = key.split(',').map(Number);
+
+            const distSq = (currentWorldX - prevX) ** 2 + (currentWorldZ - prevZ) ** 2;
+            const minDistanceSq = this.minDistance ** 2;
+
+            if (distSq < minDistanceSq) {
+/*                // Выводим информацию о том, почему спавн был заблокирован
+                const distance = Math.sqrt(distSq);
+                console.log(
+                    `%c[PATTERN] Чанк (${chunkX},${chunkZ}): Спавн заблокирован. Расстояние до паттерна в (${Math.round(prevX)}, ${Math.round(prevZ)}) равно ${distance.toFixed(0)} ед. (требуется > ${this.minDistance.toFixed(0)} ед.)`,
+                    'color: orange;'
+                );*/
+                return false;
+            }
+        }
+
+        // Все проверки пройдены, спавн разрешен.
+        return true;
+    }
+
+    registerPatternSpawn(worldX, worldZ) {
+        const key = `${Math.round(worldX)},${Math.round(worldZ)}`;
+        this.spawnedPatternCenters.set(key, true);
+    }
+
+    getRandomPattern(chunkX, chunkZ) {
+        // Используем seededRandom для выбора паттерна
+        const randomIndex = Math.floor(seededRandom(chunkX * 23, chunkZ * 29, getSeed()) * patterns.length);
+        return patterns[randomIndex];
+    }
+
+    unregisterPatternSpawn(worldX, worldZ) {
+        const key = `${Math.round(worldX)},${Math.round(worldZ)}`;
+        if (this.spawnedPatternCenters.has(key)) {
+            this.spawnedPatternCenters.delete(key);
+            // console.log(`[PATTERN] Паттерн с ключом ${key} разрегистрирован.`);
+        }
+    }
+}
+
+
+
+export const coinPatternManager = new CoinPatternManager();
